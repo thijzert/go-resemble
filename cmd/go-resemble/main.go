@@ -15,20 +15,30 @@ import (
 func main() {
 	var outputFile string
 	var packageName string
+	var debugBuild bool
 	flag.StringVar(&outputFile, "o", "assets.go", "Output file name")
 	flag.StringVar(&packageName, "p", "", "Output package name")
+	flag.BoolVar(&debugBuild, "debug", false, "Debug build: generate the getAsset() function stub, but don't actually embed files.")
 	flag.Parse()
 
 	if packageName == "" {
 		log.Fatal("TODO: figure out a package name. Until I do that, please supply it with the '-p' parameter")
 	}
 
-	assets := New()
-
 	assetPaths := flag.Args()
 	if len(assetPaths) == 0 {
 		log.Fatal("Please provide at least one asset directory")
 	}
+
+	if debugBuild {
+		dynamicAssets(outputFile, packageName, assetPaths)
+	} else {
+		staticAssets(outputFile, packageName, assetPaths)
+	}
+}
+
+func staticAssets(outputFile string, packageName string, assetPaths []string) {
+	assets := New()
 
 	for _, aPath := range assetPaths {
 		err := assets.AddPath(aPath)
@@ -37,7 +47,6 @@ func main() {
 		}
 	}
 
-	log.Printf("output file: %s", outputFile)
 	o, err := os.Create(outputFile)
 	if err != nil {
 		log.Fatal(err)
@@ -64,6 +73,52 @@ func main() {
 	} else {
 		fmt.Fprintf(o, "\treturn nil, fmt.Errorf(\"asset not found\")\n")
 	}
+	fmt.Fprintf(o, "}\n")
+	o.Close()
+}
+
+func dynamicAssets(outputFile string, packageName string, assetPaths []string) {
+	absPaths := make([]string, len(assetPaths))
+	var err error
+
+	for i, p := range assetPaths {
+		absPaths[i], err = filepath.Abs(p)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fi, err := os.Stat(p)
+		if err != nil {
+			log.Fatal(err)
+		}
+		if fi.IsDir() {
+			absPaths[i] += "/"
+			if p[len(p)-1:] != "/" {
+				assetPaths[i] += "/"
+			}
+		}
+	}
+
+	o, err := os.Create(outputFile)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Fprintf(o, "package %s\n\nimport \"fmt\"\nimport \"io/ioutil\"\n\n", packageName)
+
+	fmt.Fprintf(o, "func getAsset(name string) ([]byte, error) {\n")
+	fmt.Fprintf(o, "\tvar rvp string\n")
+
+	elseif := "if"
+	for i, p := range assetPaths {
+		abs := absPaths[i]
+		fmt.Fprintf(o, "\t%s len(name) >= %d && name[:%d] == \"", elseif, len(p), len(p))
+		writeGoString(o, p)
+		fmt.Fprintf(o, "\" {\n\t\trvp = \"")
+		writeGoString(o, abs)
+		fmt.Fprintf(o, "\" + name[%d:]\n", len(p))
+	}
+	fmt.Fprintf(o, "\t} else {\n\t\treturn nil, fmt.Errorf(\"asset not found\")\n\t}\n\n")
+
+	fmt.Fprintf(o, "\treturn ioutil.ReadFile(rvp)\n")
 	fmt.Fprintf(o, "}\n")
 	o.Close()
 }
