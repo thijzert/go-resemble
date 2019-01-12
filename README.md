@@ -18,3 +18,7 @@ You can also create a debug build like this:
     go-resemble -o assets.go assets
 
 A debug build creates the same `getAsset` function, but keeps reading the files from disk. This is useful during development.
+
+License
+-------
+Copyright (c) 2019 Thijs van Dijk, all rights reserved. Redistribution and use is permitted under the terms of the BSD 3-clause (revised) license. See [this url](https://tldrlegal.com/license/bsd-3-clause-license-%28revised%29) for details.
