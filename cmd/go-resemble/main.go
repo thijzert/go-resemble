@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"os"
@@ -43,33 +44,63 @@ func main() {
 	}
 	fmt.Fprintf(o, "package %s\n\nimport \"fmt\"\n\n", packageName)
 
-	bytem := make([][]byte, 256)
+	for _, ass := range assets.Assets {
+		fmt.Fprintf(o, "var %s string = \"", ass.Varname)
+		writeGoBytes(o, ass.Contents)
+		fmt.Fprintf(o, "\"\n")
+	}
+	fmt.Fprintf(o, "\n")
+
+	fmt.Fprintf(o, "func getAsset(name string) ([]byte, error) {\n")
+	if len(assets.Assets) > 0 {
+		elseif := "if"
+		for _, ass := range assets.Assets {
+			fmt.Fprintf(o, "\t%s name == \"", elseif)
+			writeGoString(o, ass.Path)
+			fmt.Fprintf(o, "\" {\n\t\treturn []byte(%s), nil\n", ass.Varname)
+			elseif = "} else if"
+		}
+		fmt.Fprintf(o, "\t} else {\n\t\treturn nil, fmt.Errorf(\"asset not found\")\n\t}\n")
+	} else {
+		fmt.Fprintf(o, "\treturn nil, fmt.Errorf(\"asset not found\")\n")
+	}
+	fmt.Fprintf(o, "}\n")
+	o.Close()
+}
+
+var bytem [][]byte
+
+func writeGoBytes(f io.Writer, str []byte) error {
+	for _, b := range str {
+		if bytem[int(b)] != nil {
+			f.Write(bytem[int(b)])
+		} else if b < 32 || b >= 128 || b == '\\' || b == '"' {
+			fmt.Fprintf(f, "\\x%02x", b)
+		} else {
+			f.Write([]byte{b})
+		}
+	}
+	return nil
+}
+func writeGoString(f io.Writer, str string) error {
+	for _, b := range str {
+		if b < 256 && bytem[int(b)] != nil {
+			f.Write(bytem[int(b)])
+		} else if b < 32 || b == '\\' || b == '"' {
+			fmt.Fprintf(f, "\\x%02x", b)
+		} else {
+			fmt.Fprintf(f, "%c", b)
+		}
+	}
+	return nil
+}
+func init() {
+	bytem = make([][]byte, 256)
 	bytem[int('\n')] = []byte("\\n")
 	bytem[int('\r')] = []byte("\\r")
 	bytem[int('\t')] = []byte("\\t")
 	bytem[int('\\')] = []byte("\\\\")
 	bytem[int('"')] = []byte("\\\"")
-
-	for _, ass := range assets.Assets {
-		fmt.Fprintf(o, "var %s string = \"", ass.Varname)
-		for _, b := range ass.Contents {
-			if bytem[int(b)] != nil {
-				o.Write(bytem[int(b)])
-			} else if b < 32 || b >= 128 || b == '\\' || b == '"' {
-				fmt.Fprintf(o, "\\x%02x", b)
-			} else {
-				o.Write([]byte{b})
-			}
-		}
-		fmt.Fprintf(o, "\"\n")
-	}
-	fmt.Fprintf(o, "\n\n")
-
-	fmt.Fprintf(o, `func getAsset(name string) ([]byte, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-`)
-	o.Close()
 }
 
 type Ass struct {
