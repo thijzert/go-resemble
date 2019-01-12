@@ -15,7 +15,7 @@ This writes a file `assets.go` which contains all files in the earlier directory
 
 You can also create a debug build like this:
 
-    go-resemble -o assets.go assets
+    go-resemble -debug -o assets.go assets
 
 A debug build creates the same `getAsset` function, but keeps reading the files from disk. This is useful during development.
 
