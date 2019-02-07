@@ -53,6 +53,8 @@ func staticAssets(outputFile string, packageName string, assetPaths []string) {
 	}
 	fmt.Fprintf(o, "package %s\n\nimport \"fmt\"\n\n", packageName)
 
+	fmt.Fprintf(o, "const assetsEmbedded bool = true\n\n")
+
 	for _, ass := range assets.Assets {
 		fmt.Fprintf(o, "var %s string = \"", ass.Varname)
 		writeGoBytes(o, ass.Contents)
@@ -103,6 +105,8 @@ func dynamicAssets(outputFile string, packageName string, assetPaths []string) {
 		log.Fatal(err)
 	}
 	fmt.Fprintf(o, "package %s\n\nimport \"fmt\"\nimport \"io/ioutil\"\n\n", packageName)
+
+	fmt.Fprintf(o, "const assetsEmbedded bool = false\n\n")
 
 	fmt.Fprintf(o, "func getAsset(name string) ([]byte, error) {\n")
 	fmt.Fprintf(o, "\tvar rvp string\n")
