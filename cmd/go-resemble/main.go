@@ -119,6 +119,7 @@ func dynamicAssets(outputFile string, packageName string, assetPaths []string) {
 		fmt.Fprintf(o, "\" {\n\t\trvp = \"")
 		writeGoString(o, abs)
 		fmt.Fprintf(o, "\" + name[%d:]\n", len(p))
+		elseif = "} else if"
 	}
 	fmt.Fprintf(o, "\t} else {\n\t\treturn nil, fmt.Errorf(\"asset not found\")\n\t}\n\n")
 
