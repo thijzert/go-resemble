@@ -90,6 +90,8 @@ func (r Resemble) dynamicAssets(o io.WriteCloser) error {
 	absPaths := make([]string, len(r.AssetPaths))
 	var err error
 
+	dotPath := -1
+
 	for i, p := range r.AssetPaths {
 		absPaths[i], err = filepath.Abs(p)
 		if err != nil {
@@ -105,6 +107,10 @@ func (r Resemble) dynamicAssets(o io.WriteCloser) error {
 				r.AssetPaths[i] += "/"
 			}
 		}
+
+		if p == "." {
+			dotPath = i
+		}
 	}
 
 	fmt.Fprintf(o, "import \"fmt\"\nimport \"io/ioutil\"\n\n")
@@ -116,6 +122,9 @@ func (r Resemble) dynamicAssets(o io.WriteCloser) error {
 
 	elseif := "if"
 	for i, p := range r.AssetPaths {
+		if i == dotPath {
+			continue
+		}
 		abs := absPaths[i]
 		fmt.Fprintf(o, "\t%s len(name) >= %d && name[:%d] == \"", elseif, len(p), len(p))
 		writeGoString(o, p)
@@ -124,6 +133,15 @@ func (r Resemble) dynamicAssets(o io.WriteCloser) error {
 		fmt.Fprintf(o, "\" + name[%d:]\n", len(p))
 		elseif = "} else if"
 	}
+
+	// Special case to handle "."
+	if dotPath >= 0 {
+		fmt.Fprintf(o, "\t%s len(name) > 0 {\n\t\trvp = \"", elseif)
+		writeGoString(o, absPaths[dotPath])
+		fmt.Fprintf(o, "\" + name\n")
+		elseif = "} else if"
+	}
+
 	fmt.Fprintf(o, "\t} else {\n\t\treturn nil, fmt.Errorf(\"asset not found\")\n\t}\n\n")
 
 	fmt.Fprintf(o, "\treturn ioutil.ReadFile(rvp)\n")
