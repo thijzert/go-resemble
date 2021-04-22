@@ -32,7 +32,7 @@ func (r Resemble) Run() error {
 	}
 
 	if len(r.AssetPaths) == 0 {
-		return errors.New("Please provide at least one asset directory")
+		return errors.New("please provide at least one asset directory")
 	}
 
 	o, err := os.Create(r.OutputFile)

@@ -34,9 +34,9 @@ func (ac *assCollection) Add(a ass) error {
 
 	for _, b := range ac.Assets {
 		if b.Path == a.Path {
-			return fmt.Errorf("Duplicate file name '%s'", a.Path)
+			return fmt.Errorf("duplicate file name '%s'", a.Path)
 		} else if b.Varname == a.Varname {
-			return fmt.Errorf("Duplicate variable name '%s' → %s", a.Path, a.Varname)
+			return fmt.Errorf("duplicate variable name '%s' → %s", a.Path, a.Varname)
 		}
 	}
 
