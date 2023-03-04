@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // The Resemble wraps all options for EMBedding RESources into a static file
@@ -52,6 +53,70 @@ func (r Resemble) Run() error {
 	}
 }
 
+const staticTemplate string = `type embeddedStaticAssets struct {
+	prefix string
+}
+
+func (e embeddedStaticAssets) Open(name string) (fs.File, error) {
+	n := name
+	if e.prefix != "" {
+		n = e.prefix + "/" + name
+	}
+	buf, err := getAsset(n)
+	if err == nil {
+		return embeddedStaticBuffer{
+			name: name,
+			size: len(buf),
+			buf:  bytes.NewReader(buf),
+		}, nil
+	}
+
+	return nil, fs.ErrNotExist
+}
+func (e embeddedStaticAssets) Stat() (fs.FileInfo, error) {
+	return e, nil
+}
+func (e embeddedStaticAssets) Read(dest []byte) (int, error) {
+	return 0, fmt.Errorf("this is a directory")
+}
+func (e embeddedStaticAssets) Close() error {
+	return nil
+}
+func (e embeddedStaticAssets) ReadDir(n int) ([]fs.DirEntry, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (e embeddedStaticAssets) Name() string       { return e.prefix }
+func (e embeddedStaticAssets) Size() int64        { return 0 }
+func (e embeddedStaticAssets) Mode() fs.FileMode  { return fs.ModeDir | 0555 }
+func (e embeddedStaticAssets) ModTime() time.Time { return time.Unix(embedTime, 0) }
+func (e embeddedStaticAssets) IsDir() bool        { return true }
+func (e embeddedStaticAssets) Sys() any           { return nil }
+
+type embeddedStaticBuffer struct {
+	name string
+	size int
+	buf  io.Reader
+}
+
+func (f embeddedStaticBuffer) Stat() (fs.FileInfo, error) {
+	return f, nil
+}
+func (f embeddedStaticBuffer) Read(dest []byte) (int, error) {
+	return f.buf.Read(dest)
+}
+func (f embeddedStaticBuffer) Close() error {
+	return nil
+}
+
+func (f embeddedStaticBuffer) Name() string       { return f.name }
+func (f embeddedStaticBuffer) Size() int64        { return int64(f.size) }
+func (f embeddedStaticBuffer) Mode() fs.FileMode  { return 0444 }
+func (f embeddedStaticBuffer) ModTime() time.Time { return time.Unix(embedTime, 0) }
+func (f embeddedStaticBuffer) IsDir() bool        { return false }
+func (f embeddedStaticBuffer) Sys() any           { return nil }
+`
+
 func (r Resemble) staticAssets(o io.WriteCloser) error {
 	assets := newCollection()
 
@@ -62,9 +127,21 @@ func (r Resemble) staticAssets(o io.WriteCloser) error {
 		}
 	}
 
-	fmt.Fprintf(o, "import \"fmt\"\n\n")
+	fmt.Fprintf(o, "import \"bytes\"\n")
+	fmt.Fprintf(o, "import \"fmt\"\n")
+	fmt.Fprintf(o, "import \"io\"\n")
+	fmt.Fprintf(o, "import \"io/fs\"\n")
+	fmt.Fprintf(o, "import \"time\"\n")
+	fmt.Fprintf(o, "\n")
 
-	fmt.Fprintf(o, "const assetsEmbedded bool = true\n\n")
+	fmt.Fprintf(o, "const assetsEmbedded bool = true\n")
+	fmt.Fprintf(o, "const embedTime int64 = 0x%08x\n", time.Now().Unix())
+	fmt.Fprintf(o, "\n")
+
+	fmt.Fprintf(o, "%s\n", staticTemplate)
+	fmt.Fprintf(o, "var embeddedAssets embeddedStaticAssets = embeddedStaticAssets {\n")
+	fmt.Fprintf(o, "\tprefix: \"\",\n")
+	fmt.Fprintf(o, "}\n\n")
 
 	for _, ass := range assets.Assets {
 		fmt.Fprintf(o, "var %s string = \"", ass.Varname)
@@ -117,14 +194,42 @@ func (r Resemble) dynamicAssets(o io.WriteCloser) error {
 		}
 	}
 
-	fmt.Fprintf(o, "import \"fmt\"\nimport \"io/ioutil\"\n\n")
+	fmt.Fprintf(o, "import \"fmt\"\n")
+	fmt.Fprintf(o, "import \"io/fs\"\n")
+	fmt.Fprintf(o, "import \"io/ioutil\"\n")
+	fmt.Fprintf(o, "import \"os\"\n")
+	fmt.Fprintf(o, "\n")
 
 	fmt.Fprintf(o, "const assetsEmbedded bool = false\n\n")
+
+	fmt.Fprintf(o, "%s\n", "type embeddedDynamicAssets struct {}\n")
+	fmt.Fprintf(o, "%s\n", "func (d embeddedDynamicAssets) Open(name string) (fs.File, error) {\n")
+	elseif := "if"
+	for i, p := range r.AssetPaths {
+		if i == dotPath {
+			continue
+		}
+		abs := absPaths[i]
+		fmt.Fprintf(o, "\t%s len(name) >= %d && name[:%d] == \"%s\" {\n", elseif, len(p), len(p), goString(p))
+		fmt.Fprintf(o, "\t\treturn os.Open(\"%s\" + name[%d:])\n", goString(abs), len(p))
+		elseif = "} else if"
+	}
+	if dotPath >= 0 {
+		fmt.Fprintf(o, "\t%s len(name) > 0 {\n", elseif)
+		fmt.Fprintf(o, "\t\treturn os.Open(\"%s\" + name)\n", goString(absPaths[dotPath]))
+	}
+	fmt.Fprintf(o, "\t} else {\n\t\treturn nil, fs.ErrNotExist\n\t}\n")
+	fmt.Fprintf(o, "}\n")
+	fmt.Fprintf(o, "\n")
+
+	fmt.Fprintf(o, "var embeddedAssets embeddedDynamicAssets = embeddedDynamicAssets {\n")
+	fmt.Fprintf(o, "\t// todo\n")
+	fmt.Fprintf(o, "}\n\n")
 
 	fmt.Fprintf(o, "func getAsset(name string) ([]byte, error) {\n")
 	fmt.Fprintf(o, "\tvar rvp string\n")
 
-	elseif := "if"
+	elseif = "if"
 	for i, p := range r.AssetPaths {
 		if i == dotPath {
 			continue
@@ -186,6 +291,19 @@ func init() {
 	bytem[int('\t')] = []byte("\\t")
 	bytem[int('\\')] = []byte("\\\\")
 	bytem[int('"')] = []byte("\\\"")
+}
+func goString(str string) string {
+	rv := ""
+	for _, b := range str {
+		if b < 256 && bytem[int(b)] != nil {
+			rv += string(bytem[int(b)])
+		} else if b < 32 || b == '\\' || b == '"' {
+			rv += fmt.Sprintf("\\x%02x", b)
+		} else {
+			rv += string(b)
+		}
+	}
+	return rv
 }
 
 func varname(pt string) string {
