@@ -58,6 +58,9 @@ const staticTemplate string = `type embeddedStaticAssets struct {
 }
 
 func (e embeddedStaticAssets) Open(name string) (fs.File, error) {
+	if name == "." {
+		return e, nil
+	}
 	n := name
 	if e.prefix != "" {
 		n = e.prefix + "/" + name
@@ -83,7 +86,9 @@ func (e embeddedStaticAssets) Close() error {
 	return nil
 }
 func (e embeddedStaticAssets) ReadDir(n int) ([]fs.DirEntry, error) {
-	return nil, fmt.Errorf("not implemented")
+	// FIXME: we ignore n, since we don't have a way of keeping track of how much we've read
+	rv, err := listAssets(e.prefix)
+	return rv, err
 }
 
 func (e embeddedStaticAssets) Name() string       { return e.prefix }
@@ -115,6 +120,28 @@ func (f embeddedStaticBuffer) Mode() fs.FileMode  { return 0444 }
 func (f embeddedStaticBuffer) ModTime() time.Time { return time.Unix(embedTime, 0) }
 func (f embeddedStaticBuffer) IsDir() bool        { return false }
 func (f embeddedStaticBuffer) Sys() any           { return nil }
+
+type embeddedDirEntry struct {
+	basename  string
+	size      int64
+	isDir     bool
+}
+
+func (d embeddedDirEntry) Name() string               { return d.basename }
+func (d embeddedDirEntry) IsDir() bool                { return d.isDir }
+func (d embeddedDirEntry) Size() int64                { return d.size }
+func (d embeddedDirEntry) Mode() fs.FileMode          { return d.Type() }
+func (d embeddedDirEntry) ModTime() time.Time         { return time.Unix(embedTime, 0) }
+func (d embeddedDirEntry) Sys() any                   { return nil }
+func (d embeddedDirEntry) Info() (fs.FileInfo, error) { return d, nil }
+func (d embeddedDirEntry) Type() fs.FileMode {
+	if d.isDir {
+		return fs.ModeDir | 0555
+	} else {
+		return 0444
+	}
+}
+
 `
 
 func (r Resemble) staticAssets(o io.WriteCloser) error {
@@ -163,6 +190,25 @@ func (r Resemble) staticAssets(o io.WriteCloser) error {
 	} else {
 		fmt.Fprintf(o, "\treturn nil, fmt.Errorf(\"asset not found\")\n")
 	}
+	fmt.Fprintf(o, "}\n")
+
+	fmt.Fprintf(o, "\n")
+
+	fmt.Fprintf(o, "func listAssets(name string) ([]fs.DirEntry, error) {\n")
+	if len(assets.Assets) > 0 {
+		elseif := "if"
+		for dirName, listing := range assets.Listing {
+			fmt.Fprintf(o, "\t%s name == \"%s\" {\n", elseif, goString(dirName))
+			fmt.Fprintf(o, "\t\treturn []fs.DirEntry{\n")
+			for _, dirent := range listing {
+				fmt.Fprintf(o, "\t\t\tembeddedDirEntry{\"%s\", 0x%08x, %v},\n", goString(dirent.Basename), dirent.Size, dirent.IsDir)
+			}
+			fmt.Fprintf(o, "\t\t}, nil\n")
+			elseif = "} else if"
+		}
+		fmt.Fprintf(o, "\t}\n\n")
+	}
+	fmt.Fprintf(o, "\treturn nil, fs.ErrNotExist\n")
 	fmt.Fprintf(o, "}\n")
 	return o.Close()
 }
@@ -254,6 +300,42 @@ func (r Resemble) dynamicAssets(o io.WriteCloser) error {
 	fmt.Fprintf(o, "\t} else {\n\t\treturn nil, fmt.Errorf(\"asset not found\")\n\t}\n\n")
 
 	fmt.Fprintf(o, "\treturn ioutil.ReadFile(rvp)\n")
+	fmt.Fprintf(o, "}\n")
+
+	fmt.Fprintf(o, "\n")
+
+	fmt.Fprintf(o, "func listAssets(name string) ([]fs.DirEntry, error) {\n")
+	fmt.Fprintf(o, "\tvar rvp string\n")
+	elseif = "if"
+	for i, p := range r.AssetPaths {
+		if i == dotPath {
+			continue
+		}
+		fmt.Fprintf(o, "\t%s len(name) >= %d && name[:%d] == \"%s\" {\n", elseif, len(p), len(p), goString(p))
+		fmt.Fprintf(o, "\t\trvp = \"%s\" + name[%d:]\n", goString(absPaths[i]), len(p))
+		elseif = "} else if"
+	}
+
+	// Special case to handle "."
+	if dotPath >= 0 {
+		fmt.Fprintf(o, "\t%s len(name) > 0 {\n", elseif)
+		fmt.Fprintf(o, "\t\trvp = \"%s\" + name\n", goString(absPaths[dotPath]))
+		elseif = "} else if"
+	}
+	fmt.Fprintf(o, "\t} else {\n\t\treturn nil, fs.ErrNotExist\n\t}\n\n")
+
+	fmt.Fprintf(o, "\td, err := os.Open(rvp)\n")
+	fmt.Fprintf(o, "\tif err != nil {\n\t\treturn nil, err\n\t}\n")
+	fmt.Fprintf(o, "\tfis, err := d.ReadDir(-1)\n")
+	fmt.Fprintf(o, "\tif err != nil {\n\t\treturn nil, err\n\t}\n")
+
+	fmt.Fprintf(o, "\trv := make([]fs.DirEntry, 0, len(fis))\n")
+	fmt.Fprintf(o, "\tfor _, fi := range fis {\n")
+	fmt.Fprintf(o, "\t\tif fi.Name() == \".\" || fi.Name() == \"..\" {\n\t\t\tcontinue\n\t\t}\n")
+	fmt.Fprintf(o, "\t\trv = append(rv, fi)\n")
+	fmt.Fprintf(o, "\t}\n")
+
+	fmt.Fprintf(o, "\treturn rv, nil\n")
 	fmt.Fprintf(o, "}\n")
 	return o.Close()
 }

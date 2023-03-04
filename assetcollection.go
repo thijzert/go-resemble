@@ -16,13 +16,21 @@ type ass struct {
 	Contents []byte
 }
 
+type listEntry struct {
+	Basename string
+	Size     int64
+	IsDir    bool
+}
+
 type assCollection struct {
-	Assets []ass
+	Assets  []ass
+	Listing map[string][]listEntry
 }
 
 func newCollection() *assCollection {
 	rv := &assCollection{
-		Assets: make([]ass, 0),
+		Assets:  make([]ass, 0),
+		Listing: make(map[string][]listEntry),
 	}
 	return rv
 }
@@ -55,12 +63,25 @@ func (ac *assCollection) AddPath(aPath string) error {
 		return err
 	}
 	if fi.IsDir() {
-		dn, err := f.Readdirnames(-1)
+		dirFis, err := f.Readdir(-1)
 		if err != nil {
 			return err
 		}
-		for _, chd := range dn {
-			err := ac.AddPath(path.Join(aPath, chd))
+		var listing []listEntry
+		for _, childFi := range dirFis {
+			listing = append(listing, listEntry{
+				Basename: childFi.Name(),
+				Size:     childFi.Size(),
+				IsDir:    childFi.IsDir(),
+			})
+		}
+		if aPath == "." {
+			ac.Listing[""] = listing
+		} else {
+			ac.Listing[aPath] = listing
+		}
+		for _, childFi := range dirFis {
+			err := ac.AddPath(path.Join(aPath, childFi.Name()))
 			if err != nil {
 				return err
 			}
