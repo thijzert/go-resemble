@@ -181,14 +181,13 @@ func (r Resemble) staticAssets(o io.WriteCloser) error {
 	if len(assets.Assets) > 0 {
 		elseif := "if"
 		for _, ass := range assets.Assets {
-			fmt.Fprintf(o, "\t%s name == \"", elseif)
-			writeGoString(o, ass.Path)
-			fmt.Fprintf(o, "\" {\n\t\treturn []byte(%s), nil\n", ass.Varname)
+			fmt.Fprintf(o, "\t%s name == \"%s\" {\n", elseif, goString(ass.Path))
+			fmt.Fprintf(o, "\t\treturn []byte(%s), nil\n", ass.Varname)
 			elseif = "} else if"
 		}
-		fmt.Fprintf(o, "\t} else {\n\t\treturn nil, fmt.Errorf(\"asset not found\")\n\t}\n")
+		fmt.Fprintf(o, "\t} else {\n\t\treturn nil, fs.ErrNotExist\n\t}\n")
 	} else {
-		fmt.Fprintf(o, "\treturn nil, fmt.Errorf(\"asset not found\")\n")
+		fmt.Fprintf(o, "\treturn nil, fs.ErrNotExist\n")
 	}
 	fmt.Fprintf(o, "}\n")
 
@@ -240,7 +239,6 @@ func (r Resemble) dynamicAssets(o io.WriteCloser) error {
 		}
 	}
 
-	fmt.Fprintf(o, "import \"fmt\"\n")
 	fmt.Fprintf(o, "import \"io/fs\"\n")
 	fmt.Fprintf(o, "import \"io/ioutil\"\n")
 	fmt.Fprintf(o, "import \"os\"\n")
@@ -281,23 +279,18 @@ func (r Resemble) dynamicAssets(o io.WriteCloser) error {
 			continue
 		}
 		abs := absPaths[i]
-		fmt.Fprintf(o, "\t%s len(name) >= %d && name[:%d] == \"", elseif, len(p), len(p))
-		writeGoString(o, p)
-		fmt.Fprintf(o, "\" {\n\t\trvp = \"")
-		writeGoString(o, abs)
-		fmt.Fprintf(o, "\" + name[%d:]\n", len(p))
+		fmt.Fprintf(o, "\t%s len(name) >= %d && name[:%d] == \"%s\" {\n", elseif, len(p), len(p), goString(p))
+		fmt.Fprintf(o, "\t\trvp = \"%s\" + name[%d:]\n", goString(abs), len(p))
 		elseif = "} else if"
 	}
 
 	// Special case to handle "."
 	if dotPath >= 0 {
-		fmt.Fprintf(o, "\t%s len(name) > 0 {\n\t\trvp = \"", elseif)
-		writeGoString(o, absPaths[dotPath])
-		fmt.Fprintf(o, "\" + name\n")
-		elseif = "} else if"
+		fmt.Fprintf(o, "\t%s len(name) > 0 {\n", elseif)
+		fmt.Fprintf(o, "\t\trvp = \"%s\" + name\n", goString(absPaths[dotPath]))
 	}
 
-	fmt.Fprintf(o, "\t} else {\n\t\treturn nil, fmt.Errorf(\"asset not found\")\n\t}\n\n")
+	fmt.Fprintf(o, "\t} else {\n\t\treturn nil, fs.ErrNotExist\n\t}\n\n")
 
 	fmt.Fprintf(o, "\treturn ioutil.ReadFile(rvp)\n")
 	fmt.Fprintf(o, "}\n")
@@ -350,18 +343,6 @@ func writeGoBytes(f io.Writer, str []byte) error {
 			fmt.Fprintf(f, "\\x%02x", b)
 		} else {
 			f.Write([]byte{b})
-		}
-	}
-	return nil
-}
-func writeGoString(f io.Writer, str string) error {
-	for _, b := range str {
-		if b < 256 && bytem[int(b)] != nil {
-			f.Write(bytem[int(b)])
-		} else if b < 32 || b == '\\' || b == '"' {
-			fmt.Fprintf(f, "\\x%02x", b)
-		} else {
-			fmt.Fprintf(f, "%c", b)
 		}
 	}
 	return nil
