@@ -5,8 +5,8 @@ Installation
 
     go get -u github.com/thijzert/go-resemble/...
 
-Usage
------
+Command-line usage
+------------------
 To embed all files in a directory `assets/`, run:
 
     go-resemble -o assets.go assets
@@ -18,6 +18,37 @@ You can also create a debug build like this:
     go-resemble -debug -o assets.go assets
 
 A debug build creates the same `getAsset` function, but keeps reading the files from disk. This is useful during development.
+
+As a library
+------------
+`go-resemble` can be used as a library, for instance, in a build script.
+
+```go
+package main
+
+import "context"
+import "log"
+import "os"
+import "os/exec"
+
+func main() {
+	ctx := context.Background()
+	f, _ := os.Create("assets.go")
+
+	var emb resemble.Resemble
+	emb.PackageName = "main"
+	emb.Debug = true
+	emb.AssetPaths = []string{"assets"}
+	if err := emb.Run(ctx, f); err != nil {
+		log.Fatalf("error running 'resemble': %v", err)
+	}
+
+	c := exec.CommandContext(ctx, "go", "build", "-o", "webserver", "webserver.go", "assets.go")
+	if err := c.Run(); err != nil {
+		log.Fatalf("compilation error: %v", err)
+	}
+}
+```
 
 License
 -------

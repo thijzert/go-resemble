@@ -1,9 +1,9 @@
 package resemble
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"os"
 	"path"
 	"path/filepath"
@@ -55,13 +55,16 @@ func (ac *assCollection) Add(a ass) error {
 	return nil
 }
 
-func (ac *assCollection) AddPath(aPath string) error {
-	log.Printf("resolve rPath '%s', base %s", aPath, ac.RelativeBase)
+func (ac *assCollection) AddPath(ctx context.Context, aPath string) error {
+	err := ctx.Err()
+	if err != nil {
+		return err
+	}
+
 	rPath := aPath
 	if ac.RelativeBase != "" {
 		if path.IsAbs(aPath) {
-			rPath, err := filepath.Rel(ac.RelativeBase, rPath)
-			log.Printf("rPath '%s', err %v", rPath, err)
+			rPath, err = filepath.Rel(ac.RelativeBase, rPath)
 			if err != nil {
 				rPath = aPath
 			}
@@ -98,7 +101,7 @@ func (ac *assCollection) AddPath(aPath string) error {
 			ac.Listing[rPath] = listing
 		}
 		for _, childFi := range dirFis {
-			err := ac.AddPath(path.Join(rPath, childFi.Name()))
+			err := ac.AddPath(ctx, path.Join(rPath, childFi.Name()))
 			if err != nil {
 				return err
 			}
