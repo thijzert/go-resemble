@@ -1,6 +1,7 @@
 package resemble
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -16,13 +17,22 @@ type ass struct {
 	Contents []byte
 }
 
+type listEntry struct {
+	Basename string
+	Size     int64
+	IsDir    bool
+}
+
 type assCollection struct {
-	Assets []ass
+	RelativeBase string
+	Assets       []ass
+	Listing      map[string][]listEntry
 }
 
 func newCollection() *assCollection {
 	rv := &assCollection{
-		Assets: make([]ass, 0),
+		Assets:  make([]ass, 0),
+		Listing: make(map[string][]listEntry),
 	}
 	return rv
 }
@@ -45,7 +55,24 @@ func (ac *assCollection) Add(a ass) error {
 	return nil
 }
 
-func (ac *assCollection) AddPath(aPath string) error {
+func (ac *assCollection) AddPath(ctx context.Context, aPath string) error {
+	err := ctx.Err()
+	if err != nil {
+		return err
+	}
+
+	rPath := aPath
+	if ac.RelativeBase != "" {
+		if path.IsAbs(aPath) {
+			rPath, err = filepath.Rel(ac.RelativeBase, rPath)
+			if err != nil {
+				rPath = aPath
+			}
+		} else {
+			aPath = path.Join(ac.RelativeBase, rPath)
+		}
+	}
+
 	fi, err := os.Stat(aPath)
 	if err != nil {
 		return err
@@ -54,13 +81,27 @@ func (ac *assCollection) AddPath(aPath string) error {
 	if err != nil {
 		return err
 	}
+
 	if fi.IsDir() {
-		dn, err := f.Readdirnames(-1)
+		dirFis, err := f.Readdir(-1)
 		if err != nil {
 			return err
 		}
-		for _, chd := range dn {
-			err := ac.AddPath(path.Join(aPath, chd))
+		var listing []listEntry
+		for _, childFi := range dirFis {
+			listing = append(listing, listEntry{
+				Basename: childFi.Name(),
+				Size:     childFi.Size(),
+				IsDir:    childFi.IsDir(),
+			})
+		}
+		if rPath == "." {
+			ac.Listing[""] = listing
+		} else {
+			ac.Listing[rPath] = listing
+		}
+		for _, childFi := range dirFis {
+			err := ac.AddPath(ctx, path.Join(rPath, childFi.Name()))
 			if err != nil {
 				return err
 			}
@@ -72,7 +113,7 @@ func (ac *assCollection) AddPath(aPath string) error {
 		}
 
 		ass := ass{
-			Path:     aPath,
+			Path:     rPath,
 			Contents: cnt,
 		}
 		err = ac.Add(ass)
