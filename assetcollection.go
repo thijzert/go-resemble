@@ -3,6 +3,7 @@ package resemble
 import (
 	"fmt"
 	"io/ioutil"
+	"log"
 	"os"
 	"path"
 	"path/filepath"
@@ -23,8 +24,9 @@ type listEntry struct {
 }
 
 type assCollection struct {
-	Assets  []ass
-	Listing map[string][]listEntry
+	RelativeBase string
+	Assets       []ass
+	Listing      map[string][]listEntry
 }
 
 func newCollection() *assCollection {
@@ -54,6 +56,20 @@ func (ac *assCollection) Add(a ass) error {
 }
 
 func (ac *assCollection) AddPath(aPath string) error {
+	log.Printf("resolve rPath '%s', base %s", aPath, ac.RelativeBase)
+	rPath := aPath
+	if ac.RelativeBase != "" {
+		if path.IsAbs(aPath) {
+			rPath, err := filepath.Rel(ac.RelativeBase, rPath)
+			log.Printf("rPath '%s', err %v", rPath, err)
+			if err != nil {
+				rPath = aPath
+			}
+		} else {
+			aPath = path.Join(ac.RelativeBase, rPath)
+		}
+	}
+
 	fi, err := os.Stat(aPath)
 	if err != nil {
 		return err
@@ -62,6 +78,7 @@ func (ac *assCollection) AddPath(aPath string) error {
 	if err != nil {
 		return err
 	}
+
 	if fi.IsDir() {
 		dirFis, err := f.Readdir(-1)
 		if err != nil {
@@ -75,13 +92,13 @@ func (ac *assCollection) AddPath(aPath string) error {
 				IsDir:    childFi.IsDir(),
 			})
 		}
-		if aPath == "." {
+		if rPath == "." {
 			ac.Listing[""] = listing
 		} else {
-			ac.Listing[aPath] = listing
+			ac.Listing[rPath] = listing
 		}
 		for _, childFi := range dirFis {
-			err := ac.AddPath(path.Join(aPath, childFi.Name()))
+			err := ac.AddPath(path.Join(rPath, childFi.Name()))
 			if err != nil {
 				return err
 			}
@@ -93,7 +110,7 @@ func (ac *assCollection) AddPath(aPath string) error {
 		}
 
 		ass := ass{
-			Path:     aPath,
+			Path:     rPath,
 			Contents: cnt,
 		}
 		err = ac.Add(ass)

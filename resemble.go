@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"time"
 )
@@ -19,11 +20,15 @@ type Resemble struct {
 	PackageName string
 
 	// For development builds, rather than embedding file contents in source,
-	// add a wrapper with the same interface that loads files from disk
+	// add a wrapper with the same interface that loads files from disk.
 	Debug bool
 
 	// Root paths to every asset to be embedded. Directories are traversed recursively.
 	AssetPaths []string
+
+	// RelativeBase is the base path to which all asset paths are relative.
+	// If RelativeBase is empty, the current directory is assumed.
+	RelativeBase string
 }
 
 // Run creates the output file containing all static resources
@@ -146,6 +151,7 @@ func (d embeddedDirEntry) Type() fs.FileMode {
 
 func (r Resemble) staticAssets(o io.WriteCloser) error {
 	assets := newCollection()
+	assets.RelativeBase = r.RelativeBase
 
 	for _, aPath := range r.AssetPaths {
 		err := assets.AddPath(aPath)
@@ -219,6 +225,13 @@ func (r Resemble) dynamicAssets(o io.WriteCloser) error {
 	dotPath := -1
 
 	for i, p := range r.AssetPaths {
+		if p == "." {
+			dotPath = i
+		}
+
+		if r.RelativeBase != "" && !path.IsAbs(p) {
+			p = path.Join(r.RelativeBase, p)
+		}
 		absPaths[i], err = filepath.Abs(p)
 		if err != nil {
 			return err
@@ -232,10 +245,6 @@ func (r Resemble) dynamicAssets(o io.WriteCloser) error {
 			if p[len(p)-1:] != "/" {
 				r.AssetPaths[i] += "/"
 			}
-		}
-
-		if p == "." {
-			dotPath = i
 		}
 	}
 
